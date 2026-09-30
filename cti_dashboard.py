@@ -1,46 +1,47 @@
+import os
 import requests
 import pandas as pd
 
-API_KEY = '563030eefecea571ba5ce9805bbc919a1536e3377fa5a31e82b76a09a601043e'
-BASE_URL = 'https://otx.alienvault.com/api/v1'
+API_KEY = os.environ.get("OTX_API_KEY", "").strip()
+BASE_URL = "https://otx.alienvault.com/api/v1"
 
-HEADERS = {
-    'X-OTX-API-KEY': API_KEY
-}
 
 def get_recent_pulses(limit=50):
-    url = f"{BASE_URL}/pulses/subscribed"
-    params = {'limit': limit}
-    response = requests.get(url, headers=HEADERS, params=params)
-    if response.status_code == 200:
-        return response.json()['results']
-    else:
-        print(f"Error fetching pulses: {response.status_code}")
-        return []
+    if not API_KEY:
+        raise RuntimeError("Set OTX_API_KEY in the environment before fetching pulses.")
+    if not isinstance(limit, int) or not 1 <= limit <= 100:
+        raise ValueError("limit must be an integer between 1 and 100")
+
+    response = requests.get(
+        f"{BASE_URL}/pulses/subscribed",
+        headers={"X-OTX-API-KEY": API_KEY},
+        params={"limit": limit},
+        timeout=(5, 30),
+    )
+    response.raise_for_status()
+    payload = response.json()
+    results = payload.get("results")
+    if not isinstance(results, list):
+        raise ValueError("Unexpected OTX response: 'results' must be a list")
+    return results
+
 
 def extract_pulse_data(pulses):
-    # Extract key details into a list of dicts
     data = []
     for pulse in pulses:
-        pulse_id = pulse.get('id')
-        name = pulse.get('name')
-        created = pulse.get('created')
-        modified = pulse.get('modified')
-        description = pulse.get('description')
-        threat_level = pulse.get('threat_level')
         data.append({
-            'PulseID': pulse_id,
-            'Name': name,
-            'Created': created,
-            'Modified': modified,
-            'Description': description,
-            'ThreatLevel': threat_level
+            "PulseID": pulse.get("id"),
+            "Name": pulse.get("name"),
+            "Created": pulse.get("created"),
+            "Modified": pulse.get("modified"),
+            "Description": pulse.get("description"),
+            "ThreatLevel": pulse.get("threat_level"),
         })
     return pd.DataFrame(data)
+
 
 if __name__ == "__main__":
     pulses = get_recent_pulses()
     df_pulses = extract_pulse_data(pulses)
     print(df_pulses.head())
-    # Save to CSV for Power BI ingestion
-    df_pulses.to_csv('cti_pulses.csv', index=False)
+    df_pulses.to_csv("cti_pulses.csv", index=False)
